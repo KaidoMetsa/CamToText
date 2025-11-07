@@ -44,13 +44,27 @@ class TextFragment : Fragment() {
             entries?.let { textListAdapter.submitList(it) }
         }
 
-        binding.copyAllButton.text = "Copy All"
         binding.copyAllButton.setOnClickListener {
             val allText = sharedViewModel.allEntries.value?.joinToString("\n") { it.text }
             if (!allText.isNullOrEmpty()) {
                 copyToClipboard(allText, "All Copied Text")
             }
         }
+
+        binding.deleteAllButton.setOnClickListener {
+            showDeleteAllConfirmationDialog()
+        }
+    }
+
+    private fun showDeleteAllConfirmationDialog() {
+        AlertDialog.Builder(requireContext())
+            .setTitle("Kustuta kõik?")
+            .setMessage("Kas oled kindel, et soovid kõik salvestatud tekstid kustutada? Seda tegevust ei saa tagasi võtta.")
+            .setPositiveButton("Kustuta") { _, _ ->
+                sharedViewModel.deleteAll()
+            }
+            .setNegativeButton("Tühista", null)
+            .show()
     }
 
     private fun showEditDialog(entry: TextEntry) {

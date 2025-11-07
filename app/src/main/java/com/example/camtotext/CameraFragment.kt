@@ -9,7 +9,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
@@ -28,6 +29,7 @@ class CameraFragment : Fragment() {
 
     private lateinit var viewBinding: FragmentCameraBinding
     private lateinit var cameraExecutor: ExecutorService
+    private var imageCapture: ImageCapture? = null
     private val sharedViewModel: SharedTextViewModel by viewModels {
         SharedTextViewModelFactory((requireActivity().application as CamToTextApplication).repository)
     }
@@ -54,17 +56,45 @@ class CameraFragment : Fragment() {
             )
         }
 
-        viewBinding.copyTextButton.setOnClickListener {
-            val text = viewBinding.recognizedTextView.text.toString()
-            if (text.isNotEmpty()) {
-                sharedViewModel.addText(text)
-                Toast.makeText(requireContext(), "Text copied!", Toast.LENGTH_SHORT).show()
-            }
-        }
+        viewBinding.takePhotoButton.setOnClickListener { takePhoto() }
 
         viewBinding.viewListButton.setOnClickListener {
             findNavController().navigate(R.id.action_cameraFragment_to_textFragment)
         }
+    }
+
+    private fun takePhoto() {
+        val imageCapture = imageCapture ?: return
+
+        imageCapture.takePicture(
+            ContextCompat.getMainExecutor(requireContext()),
+            object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    super.onCaptureSuccess(image)
+                    processImage(image)
+                }
+            }
+        )
+    }
+
+    private fun processImage(image: ImageProxy) {
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val inputImage = InputImage.fromMediaImage(image.image!!, image.imageInfo.rotationDegrees)
+
+        recognizer.process(inputImage)
+            .addOnSuccessListener { visionText ->
+                val resultText = visionText.text
+                if (resultText.isNotEmpty()) {
+                    sharedViewModel.addText(resultText)
+                    Toast.makeText(requireContext(), "Text saved!", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "Text recognition failed", e)
+            }
+            .addOnCompleteListener { 
+                image.close()
+            }
     }
 
     private fun startCamera() {
@@ -78,44 +108,21 @@ class CameraFragment : Fragment() {
                     it.setSurfaceProvider(viewBinding.viewFinder.surfaceProvider)
                 }
 
-            val imageAnalyzer = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-                .also {
-                    it.setAnalyzer(cameraExecutor) { imageProxy ->
-                        val mediaImage = imageProxy.image
-                        if (mediaImage != null) {
-                            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-                            recognizer.process(image)
-                                .addOnSuccessListener { visionText ->
-                                    activity?.runOnUiThread {
-                                        viewBinding.recognizedTextView.text = visionText.text
-                                    }
-                                }
-                                .addOnFailureListener { e ->
-                                    Log.e(TAG, "Text recognition failed", e)
-                                }
-                                .addOnCompleteListener { 
-                                    imageProxy.close()
-                                }
-                        }
-                    }
-                }
+            imageCapture = ImageCapture.Builder().build()
 
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
             try {
                 cameraProvider.unbindAll()
                 cameraProvider.bindToLifecycle(
-                    viewLifecycleOwner, cameraSelector, preview, imageAnalyzer
-                )
-            } catch (exc: Exception) {
+                    viewLifecycleOwner, cameraSelector, preview, imageCapture)
+            } catch(exc: Exception) {
                 Log.e(TAG, "Use case binding failed", exc)
             }
 
         }, ContextCompat.getMainExecutor(requireContext()))
     }
+
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(
