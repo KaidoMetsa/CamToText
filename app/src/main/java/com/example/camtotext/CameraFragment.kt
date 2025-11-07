@@ -8,12 +8,12 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -31,7 +31,15 @@ class CameraFragment : Fragment() {
     private lateinit var cameraExecutor: ExecutorService
     private var imageCapture: ImageCapture? = null
     private val sharedViewModel: SharedTextViewModel by viewModels {
-        SharedTextViewModelFactory((requireActivity().application as CamToTextApplication).repository)
+        SharedTextViewModelFactory((requireActivity().application as MiniPrintApplication).repository)
+    }
+
+    private val activityResultLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+        if (isGranted) {
+            startCamera()
+        } else {
+            Toast.makeText(requireContext(), "Permissions not granted by the user.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onCreateView(
@@ -51,9 +59,7 @@ class CameraFragment : Fragment() {
         if (allPermissionsGranted()) {
             startCamera()
         } else {
-            ActivityCompat.requestPermissions(
-                requireActivity(), REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS
-            )
+            activityResultLauncher.launch(Manifest.permission.CAMERA)
         }
 
         viewBinding.takePhotoButton.setOnClickListener { takePhoto() }
@@ -69,6 +75,7 @@ class CameraFragment : Fragment() {
         imageCapture.takePicture(
             ContextCompat.getMainExecutor(requireContext()),
             object : ImageCapture.OnImageCapturedCallback() {
+                @androidx.camera.core.ExperimentalGetImage
                 override fun onCaptureSuccess(image: ImageProxy) {
                     super.onCaptureSuccess(image)
                     processImage(image)
@@ -77,24 +84,30 @@ class CameraFragment : Fragment() {
         )
     }
 
-    private fun processImage(image: ImageProxy) {
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        val inputImage = InputImage.fromMediaImage(image.image!!, image.imageInfo.rotationDegrees)
+    @androidx.camera.core.ExperimentalGetImage
+    private fun processImage(imageProxy: ImageProxy) {
+        val mediaImage = imageProxy.image
+        if (mediaImage != null) {
+            val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-        recognizer.process(inputImage)
-            .addOnSuccessListener { visionText ->
-                val resultText = visionText.text
-                if (resultText.isNotEmpty()) {
-                    sharedViewModel.addText(resultText)
-                    Toast.makeText(requireContext(), "Text saved!", Toast.LENGTH_SHORT).show()
+            recognizer.process(inputImage)
+                .addOnSuccessListener { visionText ->
+                    val resultText = visionText.text
+                    if (resultText.isNotEmpty()) {
+                        sharedViewModel.addText(resultText)
+                        Toast.makeText(requireContext(), "Text saved!", Toast.LENGTH_SHORT).show()
+                    }
                 }
-            }
-            .addOnFailureListener { e ->
-                Log.e(TAG, "Text recognition failed", e)
-            }
-            .addOnCompleteListener { 
-                image.close()
-            }
+                .addOnFailureListener { e ->
+                    Log.e(TAG, "Text recognition failed", e)
+                }
+                .addOnCompleteListener { 
+                    imageProxy.close()
+                }
+        } else {
+            imageProxy.close()
+        }
     }
 
     private fun startCamera() {
@@ -105,7 +118,7 @@ class CameraFragment : Fragment() {
             val preview = Preview.Builder()
                 .build()
                 .also {
-                    it.setSurfaceProvider(viewBinding.viewFinder.surfaceProvider)
+                    it.surfaceProvider = viewBinding.viewFinder.surfaceProvider
                 }
 
             imageCapture = ImageCapture.Builder().build()
@@ -124,30 +137,10 @@ class CameraFragment : Fragment() {
     }
 
 
-    private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
-        ContextCompat.checkSelfPermission(
-            requireContext(), it
-        ) == PackageManager.PERMISSION_GRANTED
-    }
+    private fun allPermissionsGranted() = ContextCompat.checkSelfPermission(
+        requireContext(), Manifest.permission.CAMERA
+    ) == PackageManager.PERMISSION_GRANTED
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ) {
-        if (requestCode == REQUEST_CODE_PERMISSIONS) {
-            if (allPermissionsGranted()) {
-                startCamera()
-            } else {
-                Toast.makeText(
-                    requireContext(),
-                    "Permissions not granted by the user.",
-                    Toast.LENGTH_SHORT
-                ).show()
-                requireActivity().finish()
-            }
-        }
-    }
 
     override fun onDestroyView() {
         super.onDestroyView()
@@ -156,7 +149,5 @@ class CameraFragment : Fragment() {
 
     companion object {
         private const val TAG = "CameraFragment"
-        private const val REQUEST_CODE_PERMISSIONS = 10
-        private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
     }
 }

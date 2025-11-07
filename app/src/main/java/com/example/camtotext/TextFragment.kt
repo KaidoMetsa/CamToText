@@ -18,7 +18,7 @@ class TextFragment : Fragment() {
 
     private lateinit var binding: FragmentTextBinding
     private val sharedViewModel: SharedTextViewModel by viewModels {
-        SharedTextViewModelFactory((requireActivity().application as CamToTextApplication).repository)
+        SharedTextViewModelFactory((requireActivity().application as MiniPrintApplication).repository)
     }
 
     override fun onCreateView(

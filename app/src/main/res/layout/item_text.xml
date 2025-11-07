@@ -33,6 +33,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Copy"
+        android:textColor="@color/my_red"
         app:layout_constraintEnd_toStartOf="@id/delete_button"
         app:layout_constraintTop_toBottomOf="@+id/text_view" />
 
@@ -42,7 +43,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Kustuta"
-        android:textColor="@color/design_default_color_error"
+        android:textColor="@color/my_red"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/text_view" />
 
